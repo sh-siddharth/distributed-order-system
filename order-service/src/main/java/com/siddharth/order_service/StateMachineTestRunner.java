@@ -1,44 +1,41 @@
 package com.siddharth.order_service;
 
 import com.siddharth.order_service.model.Order;
+import com.siddharth.order_service.repository.OrderRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 @Component
 public class StateMachineTestRunner implements CommandLineRunner {
 
+    @Autowired
+    private OrderRepository orderRepository;
+
     @Override
     public void run(String... args) throws Exception {
-        System.out.println("\n=== STARTING STATE MACHINE SIMULATION ===");
+        System.out.println("\n=== STARTING PERSISTENCE DB TEST ===");
 
-        // 1. Create a brand new order
-        Order order = new Order("ORD-12345", "PROD-99", 2, 500.0);
-        System.out.println("Initial Order Status: " + order.getCurrentStatus());
+        // 1. Create and Save fresh order (Should be saved as 'PLACED' in DB)
+        Order newOrder = new Order("ORD-999", "LAPTOP-01", 1, 1200.0);
+        orderRepository.save(newOrder);
+        System.out.println("Saved initial order to DB.");
 
-        // 2. Try an illegal action: processing payment right away
-        try {
-            System.out.println("\n--- Scenario A: Attempting an out-of-order action ---");
-            order.confirmPayment();
-        } catch (IllegalStateException e) {
-            System.err.println("Caught Expected Rule Violation: " + e.getMessage());
-        }
+        // 2. Read from DB and transition state
+        Order savedOrder = orderRepository.findById("ORD-999")
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+        System.out.println("Fetched from DB. Current polymorphic state class: "
+                + savedOrder.getOrderState().getClass().getSimpleName());
 
-        // 3. Follow the happy path execution flow
-        System.out.println("\n--- Scenario B: Executing the Happy Path ---");
-        order.reserveInventory();
-        System.out.println("Status after stock reservation: " + order.getCurrentStatus());
+        // Advance state
+        savedOrder.reserveInventory();
+        orderRepository.save(savedOrder); // Saves as 'INVENTORY_RESERVED'
 
-        order.confirmPayment();
-        System.out.println("Status after payment: " + order.getCurrentStatus());
+        // 3. Verify final state extraction
+        Order finalCheckOrder = orderRepository.findById("ORD-999").get();
+        System.out.println("Final state verification from DB text string to Java object: "
+                + finalCheckOrder.getCurrentStatus()); // Should print INVENTORY_RESERVED
 
-        // 4. Try to cancel a completed order
-        try {
-            System.out.println("\n--- Scenario C: Trying to cancel a completed order ---");
-            order.cancel("Customer changed mind");
-        } catch (IllegalStateException e) {
-            System.err.println("Caught Expected Rule Violation: " + e.getMessage());
-        }
-
-        System.out.println("\n=== SIMULATION COMPLETED SUCCESSFULLY ===\n");
+        System.out.println("=== DB TEST COMPLETED SUCCESSFULLY ===\n");
     }
 }

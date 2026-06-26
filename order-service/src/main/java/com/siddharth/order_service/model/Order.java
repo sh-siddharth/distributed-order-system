@@ -1,18 +1,28 @@
 package com.siddharth.order_service.model;
 
+import com.siddharth.order_service.converter.OrderStateConverter;
 import com.siddharth.order_service.state.OrderStatus;
 import com.siddharth.order_service.state.OrderState;
 import com.siddharth.order_service.state.PlacedState;
+import jakarta.persistence.*;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@Entity
+@Table(name = "orders")
+@NoArgsConstructor // Required by JPA
 public class Order {
+
+    @Id
     private String id;
     private String productId;
     private int quantity;
     private double price;
 
     // The current active state instance (not persistent in DB directly as an object)
+    @Column(name = "status")
+    @Convert(converter = OrderStateConverter.class) // Links our LLD logic to the DB column!
     private OrderState orderState;
 
     public Order(String id, String productId, int quantity, double price) {
