@@ -10,7 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 
-@Component
+//@Component
 public class InventorySimulationRunner implements CommandLineRunner {
 
     @Autowired
