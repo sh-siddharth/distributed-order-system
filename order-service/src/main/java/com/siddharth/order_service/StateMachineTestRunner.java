@@ -1,7 +1,9 @@
 package com.siddharth.order_service;
 
 import com.siddharth.order_service.client.InventoryClient;
+import com.siddharth.order_service.dto.OrderPlacedEvent;
 import com.siddharth.order_service.model.Order;
+import com.siddharth.order_service.producer.OrderEventProducer;
 import com.siddharth.order_service.repository.OrderRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -13,10 +15,13 @@ public class StateMachineTestRunner implements CommandLineRunner {
     @Autowired
     private OrderRepository orderRepository;
 
-    @Autowired
-    private InventoryClient inventoryClient;
+    /*@Autowired
+    private InventoryClient inventoryClient;*/
 
-    @Override
+    @Autowired
+    private OrderEventProducer orderEventProducer;
+
+    /*@Override
     public void run(String... args) throws Exception {
         System.out.println("\n=== STARTING DISTRIBUTED NETWORK TRANSACTION ===");
 
@@ -42,5 +47,29 @@ public class StateMachineTestRunner implements CommandLineRunner {
         }
 
         System.out.println("\n=== DISTRIBUTED TRANSACTION TEST COMPLETE ===\n");
+    }*/
+
+    @Override
+    public void run(String... args) throws Exception {
+        System.out.println("\n=== STARTING ASYNCHRONOUS EVENT TRANSACTION ===");
+
+        // 1. Create local order
+        Order order = new Order("ORD-KAFKA-ASYNC", "PROD-100", 2, 250.0);
+        orderRepository.save(order);
+        System.out.println("Step 1: Local Order saved with Status: " + order.getCurrentStatus());
+
+        // 2. Map to Event DTO
+        OrderPlacedEvent event = new OrderPlacedEvent(
+                order.getId(),
+                order.getProductId(),
+                order.getQuantity(),
+                order.getPrice()
+        );
+
+        // 3. Fire-and-Forget: Publish the event to Kafka and complete our thread immediately
+        System.out.println("Step 2: Broadcasting event to Kafka broker...");
+        orderEventProducer.publishOrderPlacedEvent(event);
+
+        System.out.println("=== ORDER-SERVICE TRANSACTION HANDOFF COMPLETE ===\n");
     }
 }
