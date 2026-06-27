@@ -1,5 +1,6 @@
 package com.siddharth.order_service;
 
+import com.siddharth.order_service.client.InventoryClient;
 import com.siddharth.order_service.model.Order;
 import com.siddharth.order_service.repository.OrderRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,30 +13,34 @@ public class StateMachineTestRunner implements CommandLineRunner {
     @Autowired
     private OrderRepository orderRepository;
 
+    @Autowired
+    private InventoryClient inventoryClient;
+
     @Override
     public void run(String... args) throws Exception {
-        System.out.println("\n=== STARTING PERSISTENCE DB TEST ===");
+        System.out.println("\n=== STARTING DISTRIBUTED NETWORK TRANSACTION ===");
 
-        // 1. Create and Save fresh order (Should be saved as 'PLACED' in DB)
-        Order newOrder = new Order("ORD-999", "LAPTOP-01", 1, 1200.0);
-        orderRepository.save(newOrder);
-        System.out.println("Saved initial order to DB.");
+        // 1. Initialize a new order locally for our seeded product "PROD-100"
+        Order order = new Order("ORD-NETWORK-TEST", "PROD-100", 2, 250.0);
+        orderRepository.save(order);
+        System.out.println("Step 1: Created local Order with Status: " + order.getCurrentStatus());
 
-        // 2. Read from DB and transition state
-        Order savedOrder = orderRepository.findById("ORD-999")
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-        System.out.println("Fetched from DB. Current polymorphic state class: "
-                + savedOrder.getOrderState().getClass().getSimpleName());
+        // 2. Perform Network Call to Inventory-Service
+        System.out.println("\nStep 2: Dispatching synchronous REST call to inventory-service...");
+        boolean isStockSecured = inventoryClient.reserveInventory(order.getProductId(), order.getQuantity());
 
-        // Advance state
-        savedOrder.reserveInventory();
-        orderRepository.save(savedOrder); // Saves as 'INVENTORY_RESERVED'
+        // 3. Evaluate Network Outcome and Transition State
+        if (isStockSecured) {
+            System.out.println("Step 3: Network reservation successful! Updating State Machine...");
+            order.reserveInventory(); // Moves state from PLACED -> INVENTORY_RESERVED
+            orderRepository.save(order);
+            System.out.println("Final Order Status in DB: " + order.getCurrentStatus());
+        } else {
+            System.err.println("Step 3: Stock reservation failed. Cancelling order...");
+            order.cancel("Out of stock or communication breakdown");
+            orderRepository.save(order);
+        }
 
-        // 3. Verify final state extraction
-        Order finalCheckOrder = orderRepository.findById("ORD-999").get();
-        System.out.println("Final state verification from DB text string to Java object: "
-                + finalCheckOrder.getCurrentStatus()); // Should print INVENTORY_RESERVED
-
-        System.out.println("=== DB TEST COMPLETED SUCCESSFULLY ===\n");
+        System.out.println("\n=== DISTRIBUTED TRANSACTION TEST COMPLETE ===\n");
     }
 }
