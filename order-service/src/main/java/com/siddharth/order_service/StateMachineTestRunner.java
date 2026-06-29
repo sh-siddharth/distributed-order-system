@@ -8,6 +8,9 @@ import com.siddharth.order_service.model.OutboxMessage;
 import com.siddharth.order_service.producer.OrderEventProducer;
 import com.siddharth.order_service.repository.OrderRepository;
 import com.siddharth.order_service.repository.OutboxRepository;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -15,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
-@Component
+//@Component
+@Slf4j // Add Lombok logging
 public class StateMachineTestRunner implements CommandLineRunner {
 
     @Autowired
@@ -32,6 +36,10 @@ public class StateMachineTestRunner implements CommandLineRunner {
 
     @Autowired
     private ObjectMapper objectMapper; // Spring Boot automatically provides this bean
+
+
+    @Autowired
+    private ObservationRegistry observationRegistry; // <--- 1. INJECT THE REGISTRY
 
     /*@Override
     public void run(String... args) throws Exception {
@@ -88,34 +96,38 @@ public class StateMachineTestRunner implements CommandLineRunner {
     @Override
     @Transactional // CRITICAL: This ensures both inserts succeed together or roll back completely
     public void run(String... args) throws Exception {
-        System.out.println("\n=== STARTING ATOMIC OUTBOX TRANSACTION ===");
+        // 2. Wrap everything in a named Observation scope
+        Observation.createNotStarted("order.creation.runner", observationRegistry).observeChecked(() -> {
 
-        // 1. Create and Save local order
-        Order order = new Order("ORD-OUTBOX-TEST", "PROD-100", 2, 250.0);
-        orderRepository.save(order);
-        System.out.println("Step 1: Local Order saved safely to DB.");
+            log.info("=== STARTING ATOMIC OUTBOX TRANSACTION ===");
 
-        // 2. Map to Event DTO
-        OrderPlacedEvent event = new OrderPlacedEvent(
-                order.getId(),
-                order.getProductId(),
-                order.getQuantity(),
-                order.getPrice()
-        );
+            // 1. Create and Save local order
+            Order order = new Order("ORD-OUTBOX-TEST", "PROD-100", 2, 250.0);
+            orderRepository.save(order);
+            log.info("Step 1: Local Order saved safely to DB.");
 
-        // 3. Serialize Event Object to JSON String
-        String jsonPayload = objectMapper.writeValueAsString(event);
+            // 2. Map to Event DTO
+            OrderPlacedEvent event = new OrderPlacedEvent(
+                    order.getId(),
+                    order.getProductId(),
+                    order.getQuantity(),
+                    order.getPrice()
+            );
 
-        // 4. Save to Outbox Table in the SAME transaction
-        OutboxMessage outboxMessage = new OutboxMessage();
-        outboxMessage.setTopic("order-placed-topic");
-        outboxMessage.setAggregateId(order.getId());
-        outboxMessage.setPayload(jsonPayload);
-        outboxMessage.setStatus("PENDING");
-        outboxMessage.setCreatedAt(LocalDateTime.now());
+            // 3. Serialize Event Object to JSON String
+            String jsonPayload = objectMapper.writeValueAsString(event);
 
-        outboxRepository.save(outboxMessage);
-        System.out.println("Step 2: Event serialized and staged securely in Outbox table.");
-        System.out.println("=== LOCAL ACID TRANSACTION COMMITTED SUCCESSFULLY ===\n");
+            // 4. Save to Outbox Table in the SAME transaction
+            OutboxMessage outboxMessage = new OutboxMessage();
+            outboxMessage.setTopic("order-placed-topic");
+            outboxMessage.setAggregateId(order.getId());
+            outboxMessage.setPayload(jsonPayload);
+            outboxMessage.setStatus("PENDING");
+            outboxMessage.setCreatedAt(LocalDateTime.now());
+
+            outboxRepository.save(outboxMessage);
+            log.info("Step 2: Event serialized and staged securely in Outbox table.");
+            log.info("=== LOCAL ACID TRANSACTION COMMITTED SUCCESSFULLY ===");
+        });
     }
 }
