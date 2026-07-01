@@ -31,6 +31,12 @@ public class InventoryResponseConsumer {
                 order.reserveInventory(); // State transitions: PLACED -> INVENTORY_RESERVED
                 orderRepository.save(order);
                 System.out.println("Order status updated successfully in DB: " + order.getCurrentStatus());
+
+                // --- COMPLETE THE LOOP: ADVANCE TO CONFIRMED ---
+                System.out.println("SAGA STEP SUCCESS: Confirming payment and completing order...");
+                order.confirmPayment(); // State transitions: INVENTORY_RESERVED -> CONFIRMED
+                orderRepository.save(order);
+                System.out.println("SAGA COMPLETE! Final Order status in DB: " + order.getCurrentStatus());
             } else {
                 System.err.println("SAGA STEP FAILED: Rolling back order. Reason: " + event.getReason());
                 order.cancel(event.getReason()); // State transitions: PLACED -> CANCELLED
